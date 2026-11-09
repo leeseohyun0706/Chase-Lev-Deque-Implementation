@@ -1,3 +1,6 @@
 main
 .clang-tidy
 cmake-build-debug/
+main.cpp
+output.json
+main.dSYM/

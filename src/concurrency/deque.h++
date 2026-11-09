@@ -6,6 +6,8 @@
 #define CONCAL_DEQUE_H
 #include <array>
 #include <atomic>
+#include <mutex>
+#include <queue>
 
 /*
  *
@@ -66,11 +68,11 @@ class Deque {
         std::size_t capacity() const noexcept { return _capacity; }
 
         T* read(std::int64_t index) const noexcept {
-            return _slots[static_cast<std::size_t>(index) & (_capacity-1)].load(std::memory_order_relaxed);
+            return _slots[static_cast<std::size_t>(index) & (_capacity-1)].load(std::memory_order_acquire);
         }
 
         void write(std::int64_t index, T* task) noexcept {
-            _slots[static_cast<std::size_t>(index) & (_capacity-1)].store(task, std::memory_order_relaxed);
+            _slots[static_cast<std::size_t>(index) & (_capacity-1)].store(task, std::memory_order_release);
         }
 
         std::unique_ptr<Ring> grow_copy(
@@ -113,7 +115,7 @@ public:
 
         auto b = _bottom.load(std::memory_order_acquire);
         auto t = _top.load(std::memory_order_acquire);
-        auto* ring = _ring.load(std::memory_order_relaxed);
+        auto* ring = _ring.load(std::memory_order_acquire);
 
         // Deque Full
         if (b >= std::numeric_limits<std::int64_t>::max() - 1) throw std::overflow_error("Index limit exceeded");
@@ -139,14 +141,17 @@ public:
 
     T* pop() {
         const auto b = _bottom.load(std::memory_order_acquire) - 1;
-        auto* ring = _ring.load(std::memory_order_relaxed);
-        _bottom.store(b, std::memory_order_release);
+        auto* ring = _ring.load(std::memory_order_acquire);
+        _bottom.store(b, std::memory_order_relaxed);
+
         std::atomic_thread_fence(std::memory_order_seq_cst);
 
-        auto t = _top.load(std::memory_order_acquire);
+        auto t = _top.load(std::memory_order_relaxed);
 
-        if (t > b) {
-            _bottom.store(b+1, std::memory_order_release);
+        auto size = b - t;
+
+        if (b < t) {
+            _bottom.store(b + 1, std::memory_order_release);
             return nullptr;
         }
 
@@ -170,7 +175,7 @@ public:
         if (t >= b)
             return nullptr;
 
-        auto* ring = _ring.load(std::memory_order_acquire);
+        auto* ring = _ring.load(std::memory_order_consume);
 
         T* task = ring->read(t);
 
@@ -184,4 +189,28 @@ public:
     }
 };
 
+template<typename T>
+class InjectionQueue {
+private:
+    std::mutex mutex;
+    std::queue<T*> tasks;
+
+public:
+    void push(T* task) {
+        std::lock_guard lock(mutex);
+        tasks.push(task);
+    }
+
+    T* tryPop() {
+        std::lock_guard lock(mutex);
+
+        if (tasks.empty())
+            return nullptr;
+
+        T* task = tasks.front();
+        tasks.pop();
+
+        return task;
+    }
+};
 #endif //CONCAL_DEQUE_H
