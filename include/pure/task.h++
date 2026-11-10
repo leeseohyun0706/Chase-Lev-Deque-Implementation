@@ -30,7 +30,7 @@ class Task {
 protected:
     const TaskId _taskId;
 
-    std::atomic<uint32_t> _pending{0};
+    std::atomic<uint32_t> _pending{1};
     std::vector<Task*> _successors;
     std::atomic<TaskState> _state{TaskState::Ready};
 
@@ -47,19 +47,23 @@ public:
 
     bool try_make_ready(SchedulerPolicy& scheduler);
 
-    void seal(SchedulerPolicy& scheduler) {
-        try_make_ready(scheduler);
+    bool seal(SchedulerPolicy& scheduler) {
+        if (_pending.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            try_make_ready(scheduler);
+            return true;
+        }
+        return false;
         // _state.store(TaskState::Waiting, std::memory_order_relaxed);
     }
 
 };
 
 
-template<typename R, typename ...Args>
+template<typename F, typename ...Args>
 class PureFuncTask final : public Task{
 private:
-
-    PureFunc<R(Args...)> _function;
+    using R = std::invoke_result_t<F, Args...>;
+    PureFunc<F> _function;
 
     std::tuple<Input<Args>...> _inputs;
     std::shared_ptr<OutputSlot<R>> _outputs;
@@ -69,7 +73,7 @@ private:
 public:
     explicit PureFuncTask(
         TaskId taskId,
-        PureFunc<R(Args...)> function,
+        const PureFunc<F>& function,
         const std::tuple<Input<Args>...>& inputs,
         std::shared_ptr<OutputSlot<R>> outputs)
     : Task(taskId), _function(std::move(function)), _inputs(std::move(inputs)), _outputs(outputs) {}

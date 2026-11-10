@@ -1,10 +1,15 @@
-#include "../../include/pure/task.h++"
+#include "pure/task.h++"
 
-#include "../../include/pure/scheduler.h++"
+#include "pure/scheduler.h++"
 
 // template<typename R, typename ... Args>
 void Task::complete(SchedulerPolicy &scheduler)  {
-    for (auto* next : _successors) {
+    std::vector<Task*> successors;
+    {
+        std::lock_guard<std::mutex> lock(_dependency_mutex);
+        successors.swap(_successors);
+    }
+    for (auto* next : successors) {
         if (next->_pending.fetch_sub(1, std::memory_order_acq_rel) == 1) {
             // scheduler.enqueue_ready(next);
             next->try_make_ready(scheduler);
@@ -15,7 +20,9 @@ void Task::complete(SchedulerPolicy &scheduler)  {
 
 // template<typename R, typename ... Args>
 void Task::depends_on(Task &parent) {
-    // std::lock_guard<std::mutex> lock(parent._dependency_mutex);
+    std::lock_guard<std::mutex> lock(parent._dependency_mutex);
+
+
     // Only parent task is not completed.
     if (parent._state.load(std::memory_order_acquire) != TaskState::Completed) {
         _pending.fetch_add(1, std::memory_order_relaxed);

@@ -15,25 +15,45 @@ private:
 
     static void submit() {}
 public:
+
     class InvokeScope {
     private:
         std::vector<Task*> _tasks;
         Runtime& _runtime;
     public:
         explicit InvokeScope(Runtime& runtime) : _runtime(runtime) {}
-
-
+#if false
+        template<typename R, typename... Args1, typename... Args2>
+        auto invoke(R(&&fn)(Args1...), Args2&&... args) {
+            auto rfn = _runtime.func_register(fn);
+            return invoke(rfn, args...);
+        }
+#endif
+        // template<typename F, typename... Args>
+        // auto invoke(const PureFunc<F>& fn, Args&&... args) {
+        //     if constexpr ((std::is_class_v<Args> || ...)){
+        //         return _runtime.invoke(fn, args...);
+        //     }else {
+        //         auto r = _runtime.invoke(fn, args...);
+        //         _tasks.push_back(&r.getTask());
+        //         return r;
+        //     }
+        // }
         template<typename R, typename... Args1, typename... Args2>
         auto invoke(const PureFunc<R(Args1...)>& fn, Args2&&... args) {
-            if constexpr ((std::is_same_v<Args2, OutputRef<Args1>&> || ...)) {
-                return _runtime.invoke(fn, args...);
-            }else {
-                auto r = _runtime.invoke(fn, args...);
-                _tasks.push_back(r.getTask());
-                return r;
-            }
+            return _runtime.invoke(fn, std::forward<Args2>(args)...);
         }
-        ~InvokeScope() { for (auto& task : _tasks) _runtime.submit(task); }
+        // Submit non-dependence tasks
+        void submit() {
+            for (auto& task : _tasks) _runtime.submit(task);
+        }
+
+        InvokeScope(const InvokeScope&) = delete;
+        InvokeScope(InvokeScope&&) = delete;
+        InvokeScope& operator=(const InvokeScope&) = delete;
+        InvokeScope& operator=(InvokeScope&&) = delete;
+
+        ~InvokeScope() = default;
 
     };
     explicit Runtime(const size_t &worker_size = 4) : _scheduler(worker_size) {}
@@ -45,9 +65,46 @@ public:
         _scheduler.shutdown();
     }
 
+    // template<typename R, typename... Args>
+    // auto func_register(const R(&fn)(Args...)) {
+    //     return PureFunc(_funcIdGenerator.next(), fn);
+    // }
+
+    template<typename F>
+    auto func_register(F fn) {
+        return PureFunc(_funcIdGenerator.next(), fn);
+    }
+    // template<typename F>
+    // auto func_register(const F& fn) {
+    //     return PureFunc<F>(_funcIdGenerator.next(), fn);
+    // }
+
     template<typename R, typename... Args>
-    auto func_register(R(&&fn)(Args...)) {
+    auto func_register(R(fn)(Args...)) {
         return PureFunc<R(Args...)>(_funcIdGenerator.next(), fn);
+    }
+    // template<typename F>
+    // auto func_register(F&& fn) {
+    //     return PureFunc<F>(_funcIdGenerator.next(), fn);
+    // }
+
+    template<typename F, typename ...Args>
+    auto invoke(const PureFunc<F>& fn, Args&&... args) {
+        using R  = typename std::invoke_result_t<F, decltype(args)...>;
+
+        auto inputs = std::tuple((Input(std::forward<Args>(args)))...);
+        auto slot = std::make_shared<OutputSlot<R>>();
+
+        auto task = std::make_shared<PureFuncTask<F, Args...>>(_taskIdGenerator.next(), fn, inputs, slot);
+        // Add dependency for Child Task indicating reference input.
+        (attach_dependency(*task, args), ...);
+
+        {
+            std::lock_guard lock(_mutex);
+            _tasks.push_back(task);
+        }
+        task->seal(_scheduler.getPolicy());
+        return OutputRef<R>{slot, *task};;
     }
 
     template<typename R, typename... Args1, typename... Args2>
@@ -55,14 +112,17 @@ public:
         auto inputs = std::tuple<Input<Args1>...>(std::forward<Args2>(args)...);
         auto slot = std::make_shared<OutputSlot<R>>();
 
-        auto task = std::make_shared<PureFuncTask<R, Args1...>>(_taskIdGenerator.next(), fn, inputs, slot);
-
+        auto task = std::make_shared<PureFuncTask<R(Args1...), Args1...>>(_taskIdGenerator.next(), fn, inputs, slot);
+        // Add dependency for Child Task indicating reference input.
         (attach_dependency(*task, args), ...);
+
         {
+            std::lock_guard lock(_mutex);
             _tasks.push_back(task);
         }
 
-        auto res = OutputRef<R>{slot, task};
+        task->seal(_scheduler.getPolicy());
+        auto res = OutputRef<R>{slot, *task};
 
         return res;
     }
@@ -73,7 +133,7 @@ public:
     template<typename T>
     void attach_dependency(Task& child, const OutputRef<T>& ref) {
         // ref.get();
-        child.depends_on(*(ref.getTask()));
+        child.depends_on(ref.getTask());
     }
 
     void exportTrace(std::ostream& os) {
@@ -84,8 +144,9 @@ public:
      * This submit only work when it receives no any inputted OutputRef Object (No Dependency).
      */
     template <typename T, typename ...Args>
+    [[deprecated("")]]
     void submit(const OutputRef<T>& first, const Args&... tasks) {
-        _scheduler.submit(first.getTask());
+        _scheduler.submit(&first.getTask());
         submit(tasks...);
     }
 

@@ -49,13 +49,13 @@ private:
 
     std::atomic<bool> _is_stopped{true}; // Thread Stop
 
-    std::atomic<WorkerState> _state{WorkerState::Parked};
+    std::atomic<WorkerState> _state{WorkerState::Stopped};
 
     SchedulerPolicy& _policy;
 
     WorkerRecordBuffer _records;
     TraceRecorder _recorder;
-
+    // bool is_stopped() const;
     void run();
 public:
     WorkerId workerId() const {
@@ -64,12 +64,11 @@ public:
     explicit Worker(
         WorkerId workerId,
         SchedulerPolicy& policy,
-        WorkerRecordBuffer::Clock::time_point origin,
+        TraceRecorder::Clock::time_point origin,
         size_t maxLogSize = 4092 * 2
     ) :
     _workerId(workerId),
     _policy(policy),
-    _records(maxLogSize, workerId, origin),
     _recorder(_records, _workerId, origin)
     {}
 
@@ -84,8 +83,6 @@ public:
 
     void submit(Task* task);
 
-    size_t get_epoch() const;
-
 
     void start();
 
@@ -98,6 +95,8 @@ public:
     auto get_deque()-> Deque<Task>& {
         return _deque;
     }
+
+    Task* try_steal();
 
     std::span<const TraceEvent> records() const;
 };

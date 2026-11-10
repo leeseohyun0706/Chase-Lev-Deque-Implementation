@@ -19,7 +19,7 @@ struct Dual {
             a.derivative - b.derivative
         };
     }
-    static Dual mul(Dual a, Dual b) {
+    static Dual mul( Dual a,  Dual b) {
         return Dual{
             a.value * b.value,
                 a.derivative * b.value + a.value * b.derivative
@@ -34,7 +34,7 @@ struct Dual {
     }
     static Dual cos(Dual x) {
         return Dual{
-            -std::sin(x.value),
+            std::cos(x.value),
             -std::sin(x.value) * x.derivative // Chain Rule
         };
     }
@@ -50,6 +50,13 @@ struct Dual {
         return Dual{
             std::exp(x.value),
             std::exp(x.value) * x.derivative
+        };
+    }
+
+    static Dual sqrt(Dual x) {
+        return Dual{
+        std::sqrt(x.value),
+            (1 / (2 * std::sqrt(x.value))) * x.derivative
         };
     }
 

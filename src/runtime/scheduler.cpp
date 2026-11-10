@@ -5,7 +5,7 @@
 IdGenerator<WorkerId> workerIdGenerator;
 
 Scheduler::Scheduler(size_t worker_size) : _worker_size(worker_size) {
-    auto origin = WorkerRecordBuffer::Clock::now();
+    auto origin = TraceRecorder::Clock::now();
 
     for (size_t i = 0; i < _worker_size; i++) {
         _workers.push_back(std::make_unique<Worker>(workerIdGenerator.next(), _policy, origin));
@@ -35,15 +35,16 @@ void Scheduler::start() {
     }
 }
 
-void Scheduler::shutdown() const {
+void Scheduler::shutdown() {
     stop_request();
     join_worker();
 }
 
-void Scheduler::stop_request() const {
+void Scheduler::stop_request()  {
     for (auto& worker : _workers) {
         worker->stop_request();
     }
+    _policy.wake_all();
 }
 
 void Scheduler::join_worker() const {

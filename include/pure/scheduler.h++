@@ -27,7 +27,7 @@ private:
     size_t _worker_size{4};
     std::vector<std::unique_ptr<class Worker>> _workers;
     SchedulerPolicy _policy{_workers};
-    void stop_request() const;
+    void stop_request() ;
     void join_worker() const;
 
 public:
@@ -37,7 +37,7 @@ public:
     void submit(Task* task);
 
     void start();
-    void shutdown() const;
+    void shutdown();
 
     auto& getPolicy() { return _policy; }
 

@@ -4,3 +4,5 @@ cmake-build-debug/
 main.cpp
 output.json
 main.dSYM/
+conanfile.py
+conan_provider.cmake

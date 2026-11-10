@@ -17,6 +17,7 @@ struct TaskConfig {
 
 struct TracingConfig {
     bool enable = false;
+
     uint32_t local_buffer_size = 4096 * 2;
 };
 

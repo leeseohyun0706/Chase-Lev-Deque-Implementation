@@ -8,6 +8,12 @@ Worker* current_worker() {
     return tls_worker;
 }
 
+/*
+ * Current Worker State Changes
+ *
+ * Worker::Run() -> Set Searching -> Try Find Task -> Try Steal -> Set Parked
+ *
+ */
 void Worker::run() {
         tls_worker = this;
         // As long as atomic variable _is_stopped is false (Use acquire to read released value).
@@ -36,11 +42,11 @@ void Worker::run() {
             _stats._stealAttempts.fetch_add(1, std::memory_order_relaxed);  // Use Relaxed for statistics because we don't need to load this during worker available.
 
             // Try to steal from another deque by SchedulerPolicy
-
+            _recorder.instant(TraceEventKind::StealAttempted, {0}, 0);
             if (auto* task = _policy.try_steal()) {
                 _state.store(WorkerState::Running);
                 _recorder.instant(TraceEventKind::StealSucceed, task->taskId(), 0);
-
+                _recorder.instant(TraceEventKind::TaskStarted, task->taskId(), 0);
                 // Run Task
                 {
                     TraceScope scope(_recorder, TraceEventKind::TaskExecution, task->taskId());
@@ -56,7 +62,7 @@ void Worker::run() {
 
 
             if (_is_stopped.load(std::memory_order_acquire))
-                return;
+                break;
 
             _stats._parkedAttempts.fetch_add(1, std::memory_order_relaxed);
             _state.store(WorkerState::Parked);
@@ -84,7 +90,7 @@ void Worker::join() {
 }
 
 void Worker::wake() {
-    _policy.wake();
+    _policy.wake_one();
     _recorder.instant(TraceEventKind::WakeSignal, {0}, 0);
 }
 
@@ -95,20 +101,23 @@ void Worker::submit(Task *task) {
     wake();
 }
 
-size_t Worker::get_epoch() const {
-    return _policy.workEpoch();
-}
 
 void Worker::start() {
-    // When start() executes, creates new thread executing Worker::run.
-    _thread = std::thread(&Worker::run, this);
+    // _state.store(WorkerState::Running);
     // Store false in variable _is_stopped with release.
     _is_stopped.store(false, std::memory_order_release);
+    // When start() executes, creates new thread executing Worker::run.
+    _thread = std::thread(&Worker::run, this);
 }
 
 void Worker::stop_request() {
+    _state.store(WorkerState::Stopped, std::memory_order_release);
     _is_stopped.store(true, std::memory_order_release);
     wake();
+}
+
+Task * Worker::try_steal() {
+    return _deque.steal();
 }
 
 std::span<const TraceEvent> Worker::records() const {

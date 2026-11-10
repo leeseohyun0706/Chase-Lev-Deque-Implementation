@@ -11,6 +11,7 @@
 #include <mutex>
 #include <sstream>
 
+#include "concurrency/spsc_queue.h++"
 #include "pure/core/id.h++"
 
 // Event Shape in which be expressed.
@@ -42,8 +43,8 @@ enum class TraceEventKind : uint8_t {
 std::string to_string(TraceEventKind kind);
 
 struct TraceEvent {
-    uint64_t _ts;
-    uint64_t _dur; // Duration
+    uint64_t _ts{};
+    uint64_t _dur{}; // Duration
 
     TraceEventShape _shape;
     TraceEventKind _kind;
@@ -51,7 +52,7 @@ struct TraceEvent {
     WorkerId _workerId;
     TaskId _taskId;
 
-    uint64_t _value; // For only mvp (Basic value storage as pointer size)
+    uint64_t _value{}; // For only mvp (Basic value storage as pointer size)
 
 };
 
@@ -61,63 +62,19 @@ public:
 
     virtual void record(const TraceEvent& event) = 0;
 };
-/*
- * Use this buffer for each worker to store events without mutex lock because it's local-thread list.
- *
- * Basic Principles
- * - Fixed Capacity
- * - One Object for One Worker Thread
- * - No Dynamic Memory Allocation
- * - Retain Event Dropped Count
- * - Post Worker-End Event Readable
- */
-class WorkerRecordBuffer : public TraceSink {
-public:
-    using Clock = std::chrono::steady_clock;
-private:
-    std::vector<TraceEvent> _buffer;
-    size_t _count{0}; // Received Events
-    size_t _dropped{0}; // Dropped Events due to Capacity Full
 
-    WorkerId _workerId;
-    Clock::time_point _origin; // Scheduler Start Time
-
-public:
-
-    WorkerRecordBuffer(size_t capacity, WorkerId workerId, Clock::time_point origin) : _workerId(workerId), _origin(origin), _buffer(capacity) {
-    }
-
-    void record(
-        const TraceEvent& event
-    ) override {
-        if (_count >= _buffer.size()) {
-            ++_dropped;
-            return;
-        }
-        _buffer[_count++] = event;
-    }
-
-
-    std::span<const TraceEvent> events() const {
-        return {_buffer.data(), _count};
-    }
-
-    size_t dropped() const { return _dropped; }
-};
+using WorkerRecordBuffer = EventSink<TraceEvent, 1024 * 8>;
 
 class TraceRecorder {
 public:
     using Clock = std::chrono::steady_clock;
 private:
-    // Clock::time_point _startTime = Clock::now();
-    TraceSink& _sink;
+    WorkerRecordBuffer& _sink;
     Clock::time_point _origin;
-    std::mutex _mutex;
-    std::vector<TraceEvent> _events;
     WorkerId _workerId;
 public:
 
-    TraceRecorder(TraceSink& sink, WorkerId workerId, Clock::time_point origin) : _sink(sink), _origin(origin), _workerId(workerId) {}
+    TraceRecorder(WorkerRecordBuffer& sink, WorkerId workerId, Clock::time_point origin) : _sink(sink), _origin(origin), _workerId(workerId) {}
 
     uint64_t nowNs() const {
         return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - _origin).count());
@@ -132,10 +89,6 @@ public:
 
     void counter(TraceEventKind kind, uint64_t value);
 
-    std::vector<TraceEvent> snapshot() {
-        std::lock_guard<std::mutex> lock(_mutex);
-        return _events;
-    }
 };
 
 class TraceScope {

@@ -13,7 +13,7 @@
 class SchedulerPolicy {
 private:
 
-    std::span<std::unique_ptr<class Worker>> _workers;
+    std::vector<std::unique_ptr<class Worker>>& _workers;
     std::atomic<size_t> _workEpoch{0};
     std::atomic<size_t> _readyCount{0};
 
@@ -23,7 +23,7 @@ private:
     Task* try_steal_from_global_queue(Deque<Task>& _deque);
 
 public:
-    explicit SchedulerPolicy(std::span<std::unique_ptr<Worker>> _workers);
+    explicit SchedulerPolicy(std::vector<std::unique_ptr<Worker>>& _workers);
     /*
      *
      * Note that try_pop and try_steal will depend on scheduler policy separated from Scheduler itself (in order to compare and benchmark in the same scheduler).
@@ -32,7 +32,8 @@ public:
     Task* try_steal();
     Task* try_find_task(Deque<Task>& _deque);
 
-    void wake();
+    void wake_one();
+    void wake_all();
     void wait(size_t old) const;
 
     size_t workEpoch() const {

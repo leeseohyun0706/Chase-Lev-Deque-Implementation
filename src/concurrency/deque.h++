@@ -109,7 +109,10 @@ public:
 
     Deque(const Deque&) = delete;
     Deque& operator=(const Deque&) = delete;
-
+    ~Deque() {
+        auto p = _ring.load(std::memory_order_relaxed);
+        if (p) delete p;
+    }
     bool push(T* task) {
         if (!task) return false;
 
@@ -117,9 +120,9 @@ public:
         auto t = _top.load(std::memory_order_acquire);
         auto* ring = _ring.load(std::memory_order_acquire);
 
-        // Deque Full
         if (b >= std::numeric_limits<std::int64_t>::max() - 1) throw std::overflow_error("Index limit exceeded");
 
+        // Deque Full
         if (b - t >= static_cast<std::int64_t>(ring->capacity())) {
             auto grow = ring->grow_copy(t, b);
             auto* next = grow.get();
@@ -139,6 +142,9 @@ public:
         return true;
     }
 
+    bool empty() const noexcept {
+        return (_bottom.load(std::memory_order::relaxed) - 1) < _top.load(std::memory_order_relaxed);
+    }
     T* pop() {
         const auto b = _bottom.load(std::memory_order_acquire) - 1;
         auto* ring = _ring.load(std::memory_order_acquire);

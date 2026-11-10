@@ -1,7 +1,7 @@
 #include "schedulerpolicy.h++"
 #include "runtime/worker.h++"
 
-SchedulerPolicy::SchedulerPolicy(std::span<std::unique_ptr<Worker>> workers) : _workers(workers) {
+SchedulerPolicy::SchedulerPolicy(std::vector<std::unique_ptr<Worker>>& workers) : _workers(workers) {
 }
 
 Task * SchedulerPolicy::try_pop(Deque<Task> &_deque)  {
@@ -13,17 +13,30 @@ Task * SchedulerPolicy::try_pop(Deque<Task> &_deque)  {
 }
 
 Task* SchedulerPolicy::try_steal() {
-    // First Steal Policy (Iterate all workers until finding stolen task).
-    for (auto& worker : _workers) {
-        if (auto *task = worker->get_deque().steal()) {
-            _readyCount.fetch_sub(1);
+
+
+    auto self = current_worker();
+    size_t n = _workers.size();
+    size_t start = self ? self->workerId()._value + 1 : 0; // Start with current index
+
+    for (size_t i = 0; i < n; ++i) {
+        // let start = 2, n = 4
+        // when i = 0, victim = 2,
+        // when i = 1, victim = 3,
+        // when i = 2, victim = 0,
+        // when i = 3, victim = 1.
+        Worker* victim = _workers[(start + i) % n].get();
+        if (victim == self) continue;
+        if (auto* task = victim->try_steal()) {
+            _readyCount.fetch_add(1);
             return task;
         }
     }
+
     return nullptr;
 }
 
-Task * SchedulerPolicy::try_steal_from_global_queue(Deque<Task> &_deque) {
+Task* SchedulerPolicy::try_steal_from_global_queue(Deque<Task> &_deque) {
 
     const auto first = _globalInjectionQueue.tryPop();
     // If global queue be empty.
@@ -46,7 +59,7 @@ Task * SchedulerPolicy::try_steal_from_global_queue(Deque<Task> &_deque) {
     }
 
     if (r > 0)
-        wake();
+        wake_one();
     _readyCount.fetch_sub(1);
     return first;
 }
@@ -62,9 +75,16 @@ Task* SchedulerPolicy::try_find_task(Deque<Task> &_deque) {
     return nullptr;
 }
 
-void SchedulerPolicy::wake() {
+void SchedulerPolicy::wake_one() {
     _workEpoch.fetch_add(1);
+    // vs notify_one() ?????
+    // _workEpoch.notify_all();
     _workEpoch.notify_one();
+}
+
+void SchedulerPolicy::wake_all() {
+    _workEpoch.fetch_add(1);
+    _workEpoch.notify_all();
 }
 
 void SchedulerPolicy::wait(size_t old) const {
@@ -74,10 +94,13 @@ void SchedulerPolicy::wait(size_t old) const {
 void SchedulerPolicy::submit(Task *task) {
     _readyCount.fetch_add(1);
     _globalInjectionQueue.push(task);
-    wake();
+    wake_one();
 }
 
 void SchedulerPolicy::enqueue_ready(Task *task) {
-    if (auto*w = current_worker()) w->submit(task);
+    if (auto*w = current_worker()) {
+        _readyCount.fetch_add(1);
+        w->submit(task);
+    }
     else submit(task);
 }

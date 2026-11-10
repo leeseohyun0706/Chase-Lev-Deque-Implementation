@@ -1,54 +1,45 @@
 cmake_minimum_required(VERSION 4.2)
-project(Concal LANGUAGES CXX)
+project(Concal LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-
-#include(FetchContent)
-#FetchContent_Declare(
-#        googletest
-#        URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
-#)
+find_package(Threads REQUIRED)
+# Package Requirements GTest and nlohmann_json
 find_package(GTest REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+
+
 enable_testing()
-add_executable(runtime_tests src/runtime/scheduler.cpp
-        src/runtime/task.cpp
-        src/concurrency/deque.h++
-        src/runtime/worker.h++
-        include/pure/task.h++
-        include/pure/scheduler.h++
-        src/tracing/tracer.h++
-        src/tracing/tracer.cpp
-        include/pure/func.h++
-        src/runtime/schedulerpolicy.h++
-        src/runtime/worker.cpp
-        include/pure/core/id.h++
-        include/pure/runtime/runtime.h++
-        tests/integration/invoke_test.cpp
+
+add_library(concal STATIC
+        src/runtime/scheduler.cpp
         src/runtime/schedulerpolicy.cpp
-        include/pure/core/outputslot.h++
-        src/tool/dual.h++
-        include/pure/core/configuration.h++
+        src/runtime/task.cpp
+        src/runtime/worker.cpp
+        src/tracing/tracer.cpp)
+
+target_include_directories(concal PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-
-target_include_directories(runtime_tests
-        PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
-        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-        /opt/homebrew/include
-)
-
-target_link_directories(runtime_tests PRIVATE /opt/homebrew/lib)
-
-target_link_libraries(runtime_tests
+target_compile_options(concal PRIVATE
+        $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive- /Zc:__cplusplus /wd4324>   # 4324 = alignas padding note
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra>)
+target_link_libraries(concal
         PRIVATE
-        gtest
-        gtest_main
-        nlohmann_json
+        nlohmann_json::nlohmann_json
+        Threads::Threads
 )
 
+add_executable(runtime_tests
+        tests/integration/invoke_test.cpp
+        tests/integration/dag_execution_test.cpp
+        tests/unit/concurrency/deque_tests.cpp)
+
+target_link_libraries(runtime_tests PRIVATE concal GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(
         runtime_tests
