@@ -5,7 +5,7 @@
 #include <cmath>
 struct Dual {
     double value;
-    double derivative;
+    double derivative{1.0};
 
     static Dual add(Dual a, Dual b) {
         return Dual{
@@ -26,6 +26,12 @@ struct Dual {
             };
     }
 
+    static Dual div( Dual a,  Dual b) {
+        return Dual{
+            a.value / b.value,
+                (a.derivative * b.value - a.value * b.derivative) / std::pow(b.value, 2)
+            };
+    }
     static Dual sin(Dual x) {
         return Dual{
             std::sin(x.value),

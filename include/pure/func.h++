@@ -6,16 +6,17 @@
 #include "core/outputslot.h++"
 #include "core/id.h++"
 
-
+#include <functional>
+#include <memory>
 template<typename T>
 struct Input {
 
-    using SlotRef = const OutputSlot<T>*;
+    using SlotRef = std::shared_ptr<OutputSlot<T>>;
 
     std::variant<T, SlotRef> source;
 
-    explicit Input(OutputRef<T> source) : source(source.getOutputSlot()) { }
-    explicit Input(SlotRef source) : source(source) {}
+    explicit Input(OutputRef<T> source) : source(source.getSlot()) { }
+    explicit Input(SlotRef source) : source(std::move(source)) {}
     explicit Input(const T& source) : source(source) {}
 
     T resolve() const {
@@ -36,21 +37,21 @@ class PureFunc<R(Args...)> {
 private:
     struct Callable {
         virtual ~Callable() = default;
-        virtual R invoke(Args... args) = 0;
-        virtual std::unique_ptr<Callable> clone() const = 0;
+        virtual R invoke(Args... args) const = 0;
+        virtual std::shared_ptr<const Callable> clone() const = 0;
     };
 
     template<typename F>
     struct CallableModel : public Callable {
         F func;
-        R invoke(Args... args) override { return func(std::forward<Args>(args)...); }
-        std::unique_ptr<Callable> clone() const override { return std::make_unique<CallableModel>(func); }
+        R invoke(Args... args) const override { return func(std::forward<Args>(args)...); }
+        std::shared_ptr<const Callable> clone() const override { return std::make_shared<const CallableModel>(func); }
 
         explicit CallableModel(F&& func) : func(func) {}
         explicit CallableModel(const F& func) : func(func) {} // For Lambda
     };
     FuncId _id;
-    std::unique_ptr<Callable> _callable;
+    std::shared_ptr<const Callable> _callable;
 
 public:
 

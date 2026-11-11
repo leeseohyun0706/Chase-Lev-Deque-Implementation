@@ -9,8 +9,8 @@
 struct LogEvent {
     using Clock = std::chrono::steady_clock;
     enum class LogLevel {
+        Debug, // Debug should be lowest
         Info,
-        Debug,
         Warning,
         Error
     };

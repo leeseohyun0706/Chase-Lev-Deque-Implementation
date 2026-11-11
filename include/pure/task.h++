@@ -5,7 +5,7 @@
 #ifndef CONCAL_TASK_H
 #define CONCAL_TASK_H
 #include <functional>
-#include <mutex>
+// #include <mutex>
 
 #include "func.h++"
 #include "core/id.h++"
@@ -22,32 +22,50 @@ enum class TaskState {
     Fail,
 };
 
+class Task;
+
+struct EdgeNode {
+    Task* child = nullptr;
+    EdgeNode* next = nullptr;
+};
+
 /*
  * Base Abstraction Task.
- * It poses to get pure function.
  */
-class Task {
+class Task : public std::enable_shared_from_this<Task> {
 protected:
     const TaskId _taskId;
 
     std::atomic<uint32_t> _pending{1};
-    std::vector<Task*> _successors;
+
+    // std::vector<std::shared_ptr<Task>> _successors; // A task owns tasks depended on itself as long as it's completed.
+
+    std::atomic<EdgeNode*> _successors{nullptr};
+
     std::atomic<TaskState> _state{TaskState::Ready};
 
-    std::mutex _dependency_mutex;
+    // std::mutex _dependency_mutex;
+
+    std::shared_ptr<Task> _keepAlive; // The ownership of task is owned by itself and managed by pin() and unpin().
+    static inline EdgeNode kClosed{};
+    static EdgeNode* closed() noexcept { return &kClosed; }
 public:
+
+    void pin() { _keepAlive = shared_from_this(); }
+    std::shared_ptr<Task> unpin() { return std::move(_keepAlive); }
+
     virtual ~Task() = default;
     virtual void execute() = 0;
 
     void complete(class SchedulerPolicy& scheduler);
-    void depends_on(Task& parent);
-
+    void depends_on(Task& parent, EdgeNode& node);
     explicit Task(const TaskId taskId) : _taskId(taskId) {}
     TaskId taskId() const { return _taskId; }
 
     bool try_make_ready(SchedulerPolicy& scheduler);
 
     bool seal(SchedulerPolicy& scheduler) {
+        // If there is no dependency at the time (also, if the early-completed task), make ready itself to the scheduler.
         if (_pending.fetch_sub(1, std::memory_order_acq_rel) == 1) {
             try_make_ready(scheduler);
             return true;
@@ -62,21 +80,26 @@ public:
 template<typename F, typename ...Args>
 class PureFuncTask final : public Task{
 private:
+
+    std::array<EdgeNode, sizeof...(Args)> _edges{};
     using R = std::invoke_result_t<F, Args...>;
     PureFunc<F> _function;
 
     std::tuple<Input<Args>...> _inputs;
-    std::shared_ptr<OutputSlot<R>> _outputs;
+    // std::shared_ptr<OutputSlot<R>> _outputs;
 
-
+    OutputSlot<R> _outputs;
 
 public:
+    EdgeNode& edge(size_t i)  { return _edges[i]; }
+
+    OutputSlot<R>& output() noexcept { return _outputs;}
     explicit PureFuncTask(
         TaskId taskId,
-        const PureFunc<F>& function,
-        const std::tuple<Input<Args>...>& inputs,
-        std::shared_ptr<OutputSlot<R>> outputs)
-    : Task(taskId), _function(std::move(function)), _inputs(std::move(inputs)), _outputs(outputs) {}
+        PureFunc<F> function,
+        std::tuple<Input<Args>...> inputs
+        )
+    : Task(taskId),  _function(std::move(function)), _inputs(std::move(inputs)) {}
 
     void execute() override {
         auto state = _state.load(std::memory_order_acquire);
@@ -89,7 +112,7 @@ public:
             _inputs
         );
 
-        _outputs->publish(std::move(output));
+        _outputs.publish(std::move(output));
         _state.store(TaskState::Completed, std::memory_order_release);
     }
 

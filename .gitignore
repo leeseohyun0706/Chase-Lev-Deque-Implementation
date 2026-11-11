@@ -6,3 +6,7 @@ output.json
 main.dSYM/
 conanfile.py
 conan_provider.cmake
+
+
+study_notes/
+.idea/

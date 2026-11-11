@@ -12,6 +12,7 @@
 #include <sstream>
 
 #include "concurrency/spsc_queue.h++"
+#include "pure/core/configuration.h++"
 #include "pure/core/id.h++"
 
 // Event Shape in which be expressed.
@@ -63,7 +64,7 @@ public:
     virtual void record(const TraceEvent& event) = 0;
 };
 
-using WorkerRecordBuffer = EventSink<TraceEvent, 1024 * 8>;
+using WorkerRecordBuffer = EventSink<TraceEvent>;
 
 class TraceRecorder {
 public:
@@ -72,9 +73,12 @@ private:
     WorkerRecordBuffer& _sink;
     Clock::time_point _origin;
     WorkerId _workerId;
+
+    TracingConfiguration &_config;
 public:
 
-    TraceRecorder(WorkerRecordBuffer& sink, WorkerId workerId, Clock::time_point origin) : _sink(sink), _origin(origin), _workerId(workerId) {}
+    TraceRecorder(WorkerRecordBuffer& sink, WorkerId workerId, Clock::time_point origin,  TracingConfiguration & config)
+    : _sink(sink), _origin(origin), _workerId(workerId), _config(config) {}
 
     uint64_t nowNs() const {
         return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - _origin).count());
@@ -100,7 +104,7 @@ private:
     uint64_t _startNs;
 
 public:
-    TraceScope(TraceRecorder& recorder, TraceEventKind kind, TaskId taskId = {0}, uint64_t value = 0) : _recorder(recorder), _kind(kind), _taskId(taskId), _startNs(_recorder.nowNs()), _value(value) {}
+    TraceScope(TraceRecorder& recorder, TraceEventKind kind, TaskId taskId = {0}, uint64_t value = 0) : _recorder(recorder), _kind(kind), _taskId(taskId), _value(value), _startNs(_recorder.nowNs()) {}
 
     TraceScope(const TraceScope&) = delete;
     TraceScope(TraceScope&&) = delete;

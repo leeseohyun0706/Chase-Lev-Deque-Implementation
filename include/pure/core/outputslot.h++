@@ -57,10 +57,10 @@ private:
     //
     std::shared_ptr<OutputSlot<T>> _slot;
     // Task does not need to be owned by OutputRef (It's managed on runtime)
-    class Task& _task;
+    std::shared_ptr<class Task> _task;
 public:
     using Slot_t = T;
-    explicit OutputRef(std::shared_ptr<OutputSlot<T>> slot, Task& task) : _slot(std::move(slot)), _task(task) {}
+    explicit OutputRef(std::shared_ptr<OutputSlot<T>> slot, std::shared_ptr<class Task> task) : _slot(std::move(slot)), _task(std::move(task)) {}
 
     std::shared_ptr<const T> wait_and_get() const {
         _slot->wait();
@@ -71,12 +71,13 @@ public:
         };
     }
 
+    auto getSlot() { return _slot; }
     OutputSlot<T>* getOutputSlot() const { return _slot.get(); }
     const T& read_ready() const {
         return _slot->read_ready();
     }
 
-    Task& getTask() const { return _task; }
+    Task& getTask() const { return *_task; }
 };
 
 

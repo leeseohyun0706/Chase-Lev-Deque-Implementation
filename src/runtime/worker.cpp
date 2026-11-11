@@ -24,7 +24,7 @@ void Worker::run() {
             _state.store(WorkerState::Searching); // IDK whether I can use release and acquire memory ordering to store state.
 
             // Try to pop from local worker deque.
-            if (auto* task = _policy.try_find_task(_deque)) {
+            if (auto task = _policy.try_find_task(_deque)) {
                 _state.store(WorkerState::Running);
 
                 // Run Task
@@ -43,7 +43,7 @@ void Worker::run() {
 
             // Try to steal from another deque by SchedulerPolicy
             _recorder.instant(TraceEventKind::StealAttempted, {0}, 0);
-            if (auto* task = _policy.try_steal()) {
+            if (auto task = _policy.try_steal()) {
                 _state.store(WorkerState::Running);
                 _recorder.instant(TraceEventKind::StealSucceed, task->taskId(), 0);
                 _recorder.instant(TraceEventKind::TaskStarted, task->taskId(), 0);
@@ -73,6 +73,7 @@ void Worker::run() {
             {
                 TraceScope scope(_recorder, TraceEventKind::WorkerParking, {0}, observed);
                 // wait(observed) makes a current thread block as long as _wakeEpoch is the same as observed.
+                // What if this part is gonna be spin-lock?
                 _policy.wait(observed);
             }
             _recorder.instant(TraceEventKind::WorkerWaitExited, {0}, _policy.workEpoch());

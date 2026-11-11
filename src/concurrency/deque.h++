@@ -104,7 +104,7 @@ private:
 
     std::atomic<Ring*> _ring;
 public:
-    Deque(std::size_t capacity = 32) : _ring(new Ring(capacity)) {
+    explicit Deque(std::size_t capacity = 32) : _ring(new Ring(capacity)) {
     }
 
     Deque(const Deque&) = delete;

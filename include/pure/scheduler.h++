@@ -4,6 +4,7 @@
 
 #include "concurrency/deque.h++"
 #include "task.h++"
+#include "core/configuration.h++"
 #include "tracing/tracer.h++"
 #include "runtime/schedulerpolicy.h++"
 
@@ -21,19 +22,24 @@ struct alignas(64) SchedulerStats {
  */
 class Scheduler {
 private:
+
+    SchedulerConfiguration& _config;
+
     size_t _schedulerId{0};
 
     SchedulerStats _stats;
-    size_t _worker_size{4};
+    size_t _worker_size;
     std::vector<std::unique_ptr<class Worker>> _workers;
-    SchedulerPolicy _policy{_workers};
+    SchedulerPolicy _policy;
+
+    IdGenerator<WorkerId> _workerIdGenerator;
     void stop_request() ;
     void join_worker() const;
 
 public:
 
-    explicit Scheduler(size_t worker_size = 4);
-
+    // explicit Scheduler(size_t worker_size = 4);
+    explicit Scheduler(SchedulerConfiguration& config, TracingConfiguration& tracing);
     void submit(Task* task);
 
     void start();

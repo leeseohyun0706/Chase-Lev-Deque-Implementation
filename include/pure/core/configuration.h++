@@ -3,22 +3,40 @@
 #define CONCAL_CONFIGURATION_H
 #include <cstdint>
 
+struct WorkerConfiguration {
+    enum class IdleStrategy {
+        Park, // default
+        SpinThenPark, // spin before park
+        Yield, // use Thread Yield (For special purposes)
+    };
+    uint32_t initial_deque_capacity = 32;
+    IdleStrategy idle = IdleStrategy::Park;
+    uint32_t spin_before_park = 0; // Only used for SpinThenPark
+};
 
 // Configuration for Scheduler
 struct SchedulerConfiguration {
     uint32_t worker_size = 4; // Threads
-
     bool work_stealing = true;
+
+    WorkerConfiguration worker;
 };
 
-struct TaskConfig {
+struct TaskConfiguration {
 
 };
 
-struct TracingConfig {
-    bool enable = false;
+struct TracingConfiguration {
+    bool enable = true;
+    uint32_t buffer_size = 4096 * 2;
+};
 
-    uint32_t local_buffer_size = 4096 * 2;
+
+// each Runtime owns its RuntimeConfiguration
+struct RuntimeConfiguration {
+    SchedulerConfiguration scheduler;
+    TracingConfiguration tracing;
+
 };
 
 

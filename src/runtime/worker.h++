@@ -7,6 +7,7 @@
 #include "concurrency/deque.h++"
 #include "pure/task.h++"
 // #include "runtime/schedulerpolicy.h++"
+#include "pure/core/configuration.h++"
 #include "tracing/tracer.h++"
 
 
@@ -40,6 +41,9 @@ struct alignas(64) WorkerStats {
 class Worker {
 private:
     friend class scheduler;
+
+    WorkerConfiguration _config;
+
     WorkerId _workerId; // Worker Identity
 
     WorkerStats _stats; // Statistics
@@ -65,12 +69,17 @@ public:
         WorkerId workerId,
         SchedulerPolicy& policy,
         TraceRecorder::Clock::time_point origin,
-        size_t maxLogSize = 4092 * 2
+        WorkerConfiguration& config,
+        TracingConfiguration& tracingConfig
     ) :
+    _config(config),
     _workerId(workerId),
+    _deque(_config.initial_deque_capacity),
     _policy(policy),
-    _recorder(_records, _workerId, origin)
-    {}
+    _records(tracingConfig.buffer_size),
+    _recorder(_records, _workerId, origin, tracingConfig)
+    {
+    }
 
 
 

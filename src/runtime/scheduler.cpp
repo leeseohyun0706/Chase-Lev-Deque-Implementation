@@ -2,18 +2,11 @@
 #include "../../include/pure/scheduler.h++"
 #include "worker.h++"
 
-IdGenerator<WorkerId> workerIdGenerator;
+// IdGenerator<WorkerId> workerIdGenerator;
 
-Scheduler::Scheduler(size_t worker_size) : _worker_size(worker_size) {
-    auto origin = TraceRecorder::Clock::now();
-
-    for (size_t i = 0; i < _worker_size; i++) {
-        _workers.push_back(std::make_unique<Worker>(workerIdGenerator.next(), _policy, origin));
-    }
-}
 
 void Scheduler::submit(Task *task) {
-    _policy.submit(task); // Submit according to SchedulerPolicy
+    _policy.enqueue_ready(task); // Submit according to SchedulerPolicy
     _stats._submitted.fetch_add(1, std::memory_order_relaxed);
 }
 
@@ -53,3 +46,11 @@ void Scheduler::join_worker() const {
     }
 }
 
+
+Scheduler::Scheduler(SchedulerConfiguration &config, TracingConfiguration& tracing) : _config(config), _worker_size(config.worker_size), _policy(_workers, _config) {
+    auto origin = TraceRecorder::Clock::now();
+
+    for (size_t i = 0; i < _worker_size; i++) {
+        _workers.push_back(std::make_unique<Worker>(_workerIdGenerator.next(), _policy, origin, _config.worker, tracing));
+    }
+}

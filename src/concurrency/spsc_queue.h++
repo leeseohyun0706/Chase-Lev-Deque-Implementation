@@ -2,27 +2,34 @@
 #ifndef CONCAL_SPSC_QUEUE_H
 #define CONCAL_SPSC_QUEUE_H
 #include <atomic>
+#include <cassert>
 #include <span>
 
 /*
- * Lock-Free Single-Producer Single-Consumer Queue with static capacity.
+ * Lock-Free Single-Producer Single-Consumer Queue.
  */
-template<typename T, size_t Capacity = 1024>
+template<typename T>
 class SPSCQueue {
-    static_assert(Capacity > 0, "Capacity must be greater than 0");
-    static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of 2");
+    // static_assert(Capacity > 0, "Capacity must be greater than 0");
+    // static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of 2");
 private:
-    static constexpr size_t _mask = Capacity - 1;
+    // static constexpr size_t _mask = Capacity - 1;
 
     alignas(64) std::atomic<size_t> _head{0};
     alignas(64) std::atomic<size_t> _tail{0};
-
+    size_t _capacity{0};
     // Primitive Memory Buffer
-    alignas(64) alignas(T) T _buffer[Capacity]{};
+    // alignas(64) alignas(T) T _buffer[Capacity]{};
+
+    // New Awesome Unique Pointer Buffer
+    std::unique_ptr<T[]> _buffer;
 public:
 
     const T* data() const { return &_buffer[0]; }
-    SPSCQueue() = default;
+    explicit SPSCQueue(size_t capacity = 1024) : _capacity(capacity), _buffer(std::make_unique<T[]>(capacity)) {
+        assert(capacity > 0 && "Capacity must be greater than 0");
+        assert((capacity & (capacity - 1)) == 0 && "Capacity must be a power of 2");
+    }
     ~SPSCQueue() = default;
 
     // Push at index of tail.
@@ -30,10 +37,10 @@ public:
         const auto tail = _tail.load(std::memory_order_acquire);
         const auto head = _head.load(std::memory_order_acquire);
 
-        if (tail - head == Capacity) return false; // Full
+        if (tail - head == _capacity) return false; // Full
 
         // new (&_buffer[tail & _mask]) T(data);
-        _buffer[tail & _mask] = data;
+        _buffer[tail & (_capacity - 1)] = data;
         _tail.store(tail + 1, std::memory_order_release);
         return true;
     }
@@ -45,7 +52,7 @@ public:
         if (head == tail) return false; // Empty
 
         // T& element = *reinterpret_cast<T*>(&_buffer[head & _mask]);
-        data = std::move(_buffer[head & _mask]); // Take it just easy
+        data = std::move(_buffer[head & (_capacity - 1)]); // Take it just easy
         // element.~T();
 
         _head.store(head + 1, std::memory_order_release);
@@ -74,15 +81,15 @@ public:
  * - Retain Event Dropped Count
  * - Post Worker-End Event Readable
  */
-template<typename T, size_t Capacity = 1024 * 8>
+template<typename T>
 class EventSink {
 private:
-    SPSCQueue<T, Capacity> _buffer;
+    SPSCQueue<T> _buffer;
     size_t _count{0};
     size_t _dropped{0};
 
 public:
-    EventSink() = default;
+    explicit EventSink(size_t capacity = 1024) : _buffer(capacity) {}
 
     void record(const T& event) {
         if (!_buffer.push(event)) ++_dropped;
