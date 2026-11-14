@@ -1,21 +1,32 @@
 cmake_minimum_required(VERSION 4.2)
-project(Concal LANGUAGES C CXX)
+project(Concal VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+
 find_package(Threads REQUIRED)
 
-# Package Requirements GTest and nlohmann_json
-find_package(GTest CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 
-option(CONCAL_TSAN "Enable ThreadSanitizer" OFF)
-if (CONCAL_TSAN)
-    add_compile_options(-fsanitize=thread -g)
-    add_link_options(-fsanitize=thread)
-endif()
+# Options
+option(FFF_BUILD_TESTS "Build unit, integration, and stress tests" ${PROJECT_IS_TOP_LEVEL})
+option(FFF_BUILD_BENCHMARKS "Build benchmark executables" ${PROJECT_IS_TOP_LEVEL})
+option(FFF_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+option(FFF_TSAN "Enable ThreadSanitizer" OFF)
+#if (CONCAL_TSAN)
+#    add_compile_options(-fsanitize=thread -g)
+#    add_link_options(-fsanitize=thread)
+#endif()
+
+
+# Header directory for concurrency implementations
+add_library(concal_concurrency INTERFACE)
+target_include_directories(concal_concurrency
+    INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 
 
 add_library(concal STATIC
@@ -23,11 +34,14 @@ add_library(concal STATIC
         src/runtime/schedulerpolicy.cpp
         src/runtime/task.cpp
         src/runtime/worker.cpp
-        src/tracing/tracer.cpp)
+        src/tracing/tracer.cpp
+        src/runtime/runtime.cpp
+)
+target_compile_features(concal PUBLIC cxx_std_20)
 
-target_include_directories(concal PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
+target_include_directories(concal
+        PUBLIC ${PROJECT_SOURCE_DIR}/include
+        PRIVATE ${PROJECT_SOURCE_DIR}/src
 )
 
 target_compile_options(concal PRIVATE
@@ -37,27 +51,16 @@ target_compile_options(concal PRIVATE
 
 target_link_libraries(concal
         PRIVATE
+        concal_concurrency
         nlohmann_json::nlohmann_json
         Threads::Threads
+        PUBLIC spdlog::spdlog
 )
 
-#add_executable(runtime_tests
-#        tests/integration/invoke_test.cpp
-#        tests/integration/dag_execution_test.cpp
-#        tests/stress/massive_dag_test.cpp
-#        tests/unit/concurrency/deque_tests.cpp)
-#
-#target_link_libraries(runtime_tests PRIVATE concal GTest::gtest_main)
-#include(GoogleTest)
-#gtest_discover_tests(
-#        runtime_tests
-#        PROPERTIES TIMEOUT 15
-#)
+target_compile_definitions(concal PRIVATE
+        SPDLOG_ACTIVE_LEVEL=$<IF:$<CONFIG:Debug>,SPDLOG_LEVEL_TRACE,SPDLOG_LEVEL_INFO>)
 
-
-option(CONCAL_BUILD_TESTS "Build test" ON)
-if (CONCAL_BUILD_TESTS)
+if(FFF_BUILD_TESTS OR FFF_BUILD_BENCHMARKS)
     enable_testing()
     add_subdirectory(tests)
 endif()
-

@@ -7,7 +7,7 @@
 // #include <syncstream> // It's not found in my environment
 #include <random>
 
-#include "pure/runtime/runtime.h++"
+#include "include/pure/core/runtime.h++"
 #include <fstream>
 #include <cmath>
 template<int N>

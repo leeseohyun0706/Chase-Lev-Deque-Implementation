@@ -10,43 +10,43 @@ class MPMCQueue
 {
 public:
 	explicit MPMCQueue(size_t buffer_size)
-		: buffer_(new cell_t[buffer_size])
-		, buffer_mask_(buffer_size - 1)
+		: _buffer(new cell_t[buffer_size])
+		, _buffer_mask(buffer_size - 1)
 	{
 		assert((buffer_size >= 2) && ((buffer_size & (buffer_size - 1)) == 0));
 
 		for (size_t i = 0; i != buffer_size; i += 1)
-			buffer_[i].sequence_.store(i, std::memory_order_relaxed);
+			_buffer[i].sequence_.store(i, std::memory_order_relaxed);
 
-		enqueue_pos_.store(0, std::memory_order_relaxed);
-		dequeue_pos_.store(0, std::memory_order_relaxed);
+		_tail.store(0, std::memory_order_relaxed);
+		_head.store(0, std::memory_order_relaxed);
 	}
 
 	~MPMCQueue()
 	{
-		delete[] buffer_;
+		delete[] _buffer;
 	}
 
 	bool enqueue(T const& data)
 	{
 		cell_t* cell;
-		size_t pos = enqueue_pos_.load(std::memory_order_relaxed);
+		size_t pos = _tail.load(std::memory_order_relaxed);
 
 		for (;;)
 		{
-			cell = &buffer_[pos & buffer_mask_];
+			cell = &_buffer[pos & _buffer_mask];
 			size_t seq = cell->sequence_.load(std::memory_order_acquire);
 			intptr_t dif = (intptr_t)seq - (intptr_t)pos;
 
 			if (dif == 0)
 			{
-				if (enqueue_pos_.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed))
+				if (_tail.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed))
 					break;
 			}
 			else if (dif < 0)
 				return false;
 			else
-				pos = enqueue_pos_.load(std::memory_order_relaxed);
+				pos = _tail.load(std::memory_order_relaxed);
 		}
 
 		cell->data_ = data;
@@ -58,29 +58,29 @@ public:
 	bool dequeue(T& data)
 	{
 		cell_t* cell;
-		size_t pos = dequeue_pos_.load(std::memory_order_relaxed);
+		size_t pos = _head.load(std::memory_order_relaxed);
 
 		for (;;)
 		{
-			cell = &buffer_[pos & buffer_mask_];
+			cell = &_buffer[pos & _buffer_mask];
 			size_t seq =
 				cell->sequence_.load(std::memory_order_acquire);
 			intptr_t dif = (intptr_t)seq - (intptr_t)(pos + 1);
 
 			if (dif == 0)
 			{
-				if (dequeue_pos_.compare_exchange_weak
+				if (_head.compare_exchange_weak
 				(pos, pos + 1, std::memory_order_relaxed))
 					break;
 			}
 			else if (dif < 0)
 				return false;
 			else
-				pos = dequeue_pos_.load(std::memory_order_relaxed);
+				pos = _head.load(std::memory_order_relaxed);
 		}
 
 		data = cell->data_;
-		cell->sequence_.store(pos + buffer_mask_ + 1, std::memory_order_release);
+		cell->sequence_.store(pos + _buffer_mask + 1, std::memory_order_release);
 
 		return true;
 	}
@@ -92,16 +92,16 @@ private:
 		T					data_;
 	};
 
-	static constexpr size_t     cacheline_size = 64;
-	typedef char            cacheline_pad_t[cacheline_size];
-	cacheline_pad_t         pad0_;
-	cell_t*           buffer_;
-	const size_t            buffer_mask_;
-	cacheline_pad_t         pad1_;
-	std::atomic<size_t>			enqueue_pos_;
-	cacheline_pad_t         pad2_;
-	std::atomic<size_t>			dequeue_pos_;
-	cacheline_pad_t         pad3_;
+	static constexpr size_t cacheline_size = 64;
+	typedef char cacheline_pad_t[cacheline_size];
+	cacheline_pad_t _pad0;
+	cell_t* _buffer;
+	const size_t _buffer_mask;
+	cacheline_pad_t _pad1;
+	std::atomic<size_t> _tail;
+	cacheline_pad_t _pad2;
+	std::atomic<size_t>	_head;
+	cacheline_pad_t _pad3;
 
 	MPMCQueue(MPMCQueue const&);
 	void operator = (MPMCQueue const&);

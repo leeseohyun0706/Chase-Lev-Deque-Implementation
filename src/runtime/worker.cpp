@@ -1,11 +1,45 @@
 #include "worker.h++"
-#include "runtime/schedulerpolicy.h++"
-
+#include "schedulerpolicy.h++"
+#include <pure/logging/logger.h++>
+#include "scheduler.h++"
 
 thread_local Worker* tls_worker = nullptr;
 
 Worker* current_worker() {
     return tls_worker;
+}
+
+
+std::string describe(const std::exception_ptr& error) {
+    try { std::rethrow_exception(error); }
+    catch (const std::exception& e) { return e.what(); }
+    catch (...) { return "unknown exception"; }
+}
+
+
+void Worker::task_run(Task *task) {
+    _state.store(WorkerState::Running, std::memory_order_release);
+    ExecResult result;
+
+    _recorder.instant(TraceEventKind::TaskStarted, task->taskId(), 0);
+    {
+        TraceScope scope(_recorder, TraceEventKind::TaskExecution, task->taskId());
+        result = task->execute();
+    }
+
+    switch (result.status) {
+        case ExecResult::Status::Ok: break;
+        case ExecResult::Status::Failed :
+            _logger.error("task {} threw : {}", task->taskId(), describe(result.error));
+            _policy.stats()._failed.fetch_add(1, std::memory_order_relaxed);
+            break;
+        case ExecResult::Status::Skipped :
+            _logger.error("task {} skipped: parents failed", task->taskId());
+            break;
+    }
+    task->complete(_policy);
+    _recorder.instant(TraceEventKind::TaskFinished, task->taskId(), 0);
+    _stats._taskExecuted.fetch_add(1, std::memory_order_relaxed);
 }
 
 /*
@@ -16,25 +50,18 @@ Worker* current_worker() {
  */
 void Worker::run() {
         tls_worker = this;
+
+        SPDLOG_LOGGER_DEBUG(&_logger, "thread started");
         // As long as atomic variable _is_stopped is false (Use acquire to read released value).
         while (true) {
             // Store wakeEpoch because it could change (new wakeup) during trying pop and steal.
             const auto observed = _policy.workEpoch();
 
-            _state.store(WorkerState::Searching); // IDK whether I can use release and acquire memory ordering to store state.
+            _state.store(WorkerState::Searching, std::memory_order_release);
 
             // Try to pop from local worker deque.
             if (auto task = _policy.try_find_task(_deque)) {
-                _state.store(WorkerState::Running);
-
-                // Run Task
-                {
-                    TraceScope scope(_recorder, TraceEventKind::TaskExecution, task->taskId());
-                    task->execute();
-                    task->complete(_policy);
-                }
-                _recorder.instant(TraceEventKind::TaskFinished, task->taskId(), 0);
-                _stats._taskExecuted.fetch_add(1, std::memory_order_relaxed);
+                task_run(task.get());
                 continue;
             }
 
@@ -44,17 +71,9 @@ void Worker::run() {
             // Try to steal from another deque by SchedulerPolicy
             _recorder.instant(TraceEventKind::StealAttempted, {0}, 0);
             if (auto task = _policy.try_steal()) {
-                _state.store(WorkerState::Running);
                 _recorder.instant(TraceEventKind::StealSucceed, task->taskId(), 0);
-                _recorder.instant(TraceEventKind::TaskStarted, task->taskId(), 0);
-                // Run Task
-                {
-                    TraceScope scope(_recorder, TraceEventKind::TaskExecution, task->taskId());
-                    task->execute();
-                    task->complete(_policy);
-                }
-                _recorder.instant(TraceEventKind::TaskFinished, task->taskId(), 0);
 
+                task_run(task.get());
                 _stats._stealSuccesses.fetch_add(1, std::memory_order_relaxed);
                 continue;
             }
@@ -65,7 +84,7 @@ void Worker::run() {
                 break;
 
             _stats._parkedAttempts.fetch_add(1, std::memory_order_relaxed);
-            _state.store(WorkerState::Parked);
+            _state.store(WorkerState::Parked, std::memory_order_release);
 
             _recorder.instant(TraceEventKind::WorkerWaitEntered, {0}, observed);
 
@@ -73,7 +92,7 @@ void Worker::run() {
             {
                 TraceScope scope(_recorder, TraceEventKind::WorkerParking, {0}, observed);
                 // wait(observed) makes a current thread block as long as _wakeEpoch is the same as observed.
-                // What if this part is gonna be spin-lock?
+                // What if this part be spin-lock?
                 _policy.wait(observed);
             }
             _recorder.instant(TraceEventKind::WorkerWaitExited, {0}, _policy.workEpoch());
@@ -81,6 +100,9 @@ void Worker::run() {
 
         }
 
+        SPDLOG_LOGGER_DEBUG(&_logger,
+            "thread exiting, executed={}",
+            _stats._taskExecuted.load(std::memory_order_relaxed));
         tls_worker = nullptr;
 }
 
@@ -104,7 +126,6 @@ void Worker::submit(Task *task) {
 
 
 void Worker::start() {
-    // _state.store(WorkerState::Running);
     // Store false in variable _is_stopped with release.
     _is_stopped.store(false, std::memory_order_release);
     // When start() executes, creates new thread executing Worker::run.
@@ -122,7 +143,7 @@ Task * Worker::try_steal() {
 }
 
 std::span<const TraceEvent> Worker::records() const {
-    // Because WorkerRecordBuffer uses std::vector, it doesn't ensure lock-free or mutex something.
+    // Because WorkerRecordBuffer uses std::vector, it doesn't ensure lock-free or mutex something. (Edited)
     if (!_is_stopped.load(std::memory_order_acquire)) {
         throw std::runtime_error("Worker::records() called on running state");
     }

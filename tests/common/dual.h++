@@ -13,12 +13,14 @@ struct Dual {
             a.derivative + b.derivative
         };
     }
+
     static Dual sub(Dual a, Dual b) {
         return Dual{
             a.value - b.value,
             a.derivative - b.derivative
         };
     }
+
     static Dual mul( Dual a,  Dual b) {
         return Dual{
             a.value * b.value,
@@ -32,12 +34,14 @@ struct Dual {
                 (a.derivative * b.value - a.value * b.derivative) / std::pow(b.value, 2)
             };
     }
+
     static Dual sin(Dual x) {
         return Dual{
             std::sin(x.value),
             std::cos(x.value) * x.derivative // Chain Rule
         };
     }
+
     static Dual cos(Dual x) {
         return Dual{
             std::cos(x.value),

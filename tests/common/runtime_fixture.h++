@@ -6,8 +6,8 @@
 #include <fstream>
 #include <gtest/gtest.h>
 #include "math_helper.h++"
-#include "tool/dual.h++"
-#include "pure/runtime/runtime.h++"
+#include "dual.h++"
+#include "../../include/pure/runtime.h++"
 
 class RuntimeFixture : public ::testing::Test {
 protected:
@@ -15,8 +15,8 @@ protected:
 
     static RuntimeConfiguration makeConfig() {
         RuntimeConfiguration cfg;
-        cfg.tracing.enable = false;
-        cfg.tracing.buffer_size = 1 << 8;
+        cfg.tracing.enable = true;
+        cfg.tracing.buffer_size = 1 << 12;
         return cfg;
     }
 
@@ -27,6 +27,8 @@ protected:
     void SetUp() override {
         runtime.start();
     }
+
+
     void TearDown() override {
         runtime.shutdown();
 

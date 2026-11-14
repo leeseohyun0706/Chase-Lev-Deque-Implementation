@@ -4,8 +4,8 @@
 #include <cmath>
 
 #include "pure/func.h++"
-#include "pure/runtime/runtime.h++"
-#include "tool/dual.h++"
+#include "../../include/pure/runtime.h++"
+#include "dual.h++"
 
 // Adapters so Dual works with GenericMath (found by argument-dependent lookup)
 inline Dual operator+(Dual a, Dual b) { return Dual::add(a, b); }

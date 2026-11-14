@@ -9,6 +9,8 @@ inline void burn(int work) {
     for (int i = 0; i < work; ++i) acc = acc * 1.0000001 + 1e-9;
     benchmark::DoNotOptimize(acc);
 }
+
+
 template<typename R, typename... A>
 auto busy_func(Runtime& rt, R (*f)(A...), int work) {
     return rt.func_register([f, work](A... a) -> R {
@@ -58,7 +60,7 @@ OutputRef<Dual> build_massive_dag(Runtime& rt, const TermFn& fn, const AddFn& ad
     return level.front();
 }
 
-// DiffTests: N independent 7-task DAGs. Returns the N roots.
+
 template<typename M>
 inline std::vector<OutputRef<Dual>> build_diff_dags(Runtime& rt, M& m, size_t N) {
     std::vector<OutputRef<Dual>> out;
@@ -95,7 +97,7 @@ public:
 BENCHMARK_DEFINE_F(RuntimeBench, MassiveDAG)(benchmark::State& st) {
     const size_t N = st.range(0);
     const int work = static_cast<int>(st.range(2));
-    auto fn  = busy_func(*runtime, term, work);        // registered outside the timed loop
+    auto fn  = busy_func(*runtime, term, work);
     auto add = busy_func(*runtime, Dual::add, work);
     for (auto _ : st)
         benchmark::DoNotOptimize(build_massive_dag(*runtime, fn, add, N).wait_and_get());
@@ -131,14 +133,16 @@ inline Dual testFunc_busy(Dual x, int w) {
     burn(w); return Dual::mul(l, r);
 }
 
-static void Serial_DiffTests(benchmark::State& st) {
+static void serial_difftests(benchmark::State& st) {
     const size_t N = st.range(0); const int w = static_cast<int>(st.range(1));
     for (auto _ : st)
         for (size_t i = 0; i < N; ++i)
             benchmark::DoNotOptimize(testFunc_busy(Dual{i * 0.001, 1.0}, w));
     st.SetItemsProcessed(st.iterations() * 7 * N);
 }
-BENCHMARK(Serial_DiffTests)
+
+
+BENCHMARK(serial_difftests)
     ->ArgsProduct({{1000, 10000}, {0, 100, 1000, 10000}})->ArgNames({"N", "work"})
     ->Unit(benchmark::kMicrosecond);
 

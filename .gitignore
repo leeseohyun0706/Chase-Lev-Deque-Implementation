@@ -1,12 +1,21 @@
 main
 .clang-tidy
-cmake-build-debug/
-main.cpp
-output.json
-main.dSYM/
+cmake-build-*/
+build/
+Testing/
+*.dSYM/
 conanfile.py
 conan_provider.cmake
 
 
 study_notes/
 .idea/
+.vscode/
+
+.DS_Store
+study_notes/the_curse_of_stl.md
+
+
+/traces/
+/logs/
+/output*.json

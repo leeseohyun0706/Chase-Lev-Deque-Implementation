@@ -1,10 +1,6 @@
-//
-// Created by 이서현 on 10/27/26.
-//
 
 #ifndef CONCAL_DEQUE_H
 #define CONCAL_DEQUE_H
-#include <array>
 #include <atomic>
 #include <mutex>
 #include <queue>
@@ -33,7 +29,7 @@
  * Type parameters acquire element type T.
  */
 template<typename T>
-class Deque {
+class ChaseLevDeque {
 
     /*
      * Class Ring has slots and previous ring needed to maintain previous tasks.
@@ -82,7 +78,7 @@ class Deque {
             if (_capacity > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max() / 2)) {
                 throw std::length_error("Capacity limit");
             }
-            // Create new ring of Cap * 2
+            // Create new ring of Capacity * 2
             auto next = std::make_unique<Ring>(_capacity * 2);
 
             // Write input range into new one.
@@ -104,12 +100,12 @@ private:
 
     std::atomic<Ring*> _ring;
 public:
-    explicit Deque(std::size_t capacity = 32) : _ring(new Ring(capacity)) {
+    explicit ChaseLevDeque(std::size_t capacity = 32) : _ring(new Ring(capacity)) {
     }
 
-    Deque(const Deque&) = delete;
-    Deque& operator=(const Deque&) = delete;
-    ~Deque() {
+    ChaseLevDeque(const ChaseLevDeque&) = delete;
+    ChaseLevDeque& operator=(const ChaseLevDeque&) = delete;
+    ~ChaseLevDeque() {
         auto p = _ring.load(std::memory_order_relaxed);
         if (p) delete p;
     }
@@ -154,7 +150,6 @@ public:
 
         auto t = _top.load(std::memory_order_relaxed);
 
-        auto size = b - t;
 
         if (b < t) {
             _bottom.store(b + 1, std::memory_order_release);
@@ -195,28 +190,4 @@ public:
     }
 };
 
-template<typename T>
-class InjectionQueue {
-private:
-    std::mutex mutex;
-    std::queue<T*> tasks;
-
-public:
-    void push(T* task) {
-        std::lock_guard lock(mutex);
-        tasks.push(task);
-    }
-
-    T* tryPop() {
-        std::lock_guard lock(mutex);
-
-        if (tasks.empty())
-            return nullptr;
-
-        T* task = tasks.front();
-        tasks.pop();
-
-        return task;
-    }
-};
 #endif //CONCAL_DEQUE_H

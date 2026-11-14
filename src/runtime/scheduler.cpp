@@ -1,14 +1,8 @@
 
-#include "../../include/pure/scheduler.h++"
-#include "worker.h++"
-
-// IdGenerator<WorkerId> workerIdGenerator;
-
-
-void Scheduler::submit(Task *task) {
-    _policy.enqueue_ready(task); // Submit according to SchedulerPolicy
-    _stats._submitted.fetch_add(1, std::memory_order_relaxed);
-}
+#include "scheduler.h++"
+#include "runtime/worker.h++"
+#include <spdlog/stopwatch.h>
+#include <pure/logging/logger.h++>
 
 
 void Scheduler::exportTrace(std::ostream &out) {
@@ -29,8 +23,26 @@ void Scheduler::start() {
 }
 
 void Scheduler::shutdown() {
+    spdlog::stopwatch sw;
     stop_request();
     join_worker();
+
+    _logger.info("shutdown in {:.3}s    submitted={} complete={}",
+        sw, _stats._submitted.load(std::memory_order_relaxed),
+        _stats._completed.load(std::memory_order_relaxed)
+    );
+    for (auto& w : _workers) {
+        const auto& s = w->stats();
+        auto att = s._stealAttempts.load(std::memory_order_relaxed);
+        auto ok = s._stealSuccesses.load(std::memory_order_relaxed);
+
+        _logger.info("worker {} : executed={} steals={}/{} ({:.1f}%) parks={}",
+            w->workerId(),
+            s._taskExecuted.load(std::memory_order_relaxed),
+            ok, att, att ? 100.0 * ok / att : 0.0,
+            s._parkedAttempts.load(std::memory_order_relaxed)
+        );
+    }
 }
 
 void Scheduler::stop_request()  {
@@ -47,10 +59,20 @@ void Scheduler::join_worker() const {
 }
 
 
-Scheduler::Scheduler(SchedulerConfiguration &config, TracingConfiguration& tracing) : _config(config), _worker_size(config.worker_size), _policy(_workers, _config) {
+Scheduler::Scheduler(LoggingContext &logContext, SchedulerConfiguration &config, TracingConfiguration& tracing)
+    : _config(config),
+    _logger(*logContext.make("rt.sc")),
+    _worker_size(config.worker_size),
+    _policy(_workers, _logger, _stats, _config),
+    _loggingContext(logContext) {
+
     auto origin = TraceRecorder::Clock::now();
 
     for (size_t i = 0; i < _worker_size; i++) {
-        _workers.push_back(std::make_unique<Worker>(_workerIdGenerator.next(), _policy, origin, _config.worker, tracing));
+        const auto& w_id = _workerIdGenerator.next();
+        _workers.push_back(std::make_unique<Worker>(
+            w_id, _policy, origin,
+            *_loggingContext.make("rt.sc.wo" + std::to_string(w_id._value)),
+            _config.worker, tracing));
     }
 }

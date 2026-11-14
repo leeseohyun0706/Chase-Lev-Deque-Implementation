@@ -19,6 +19,7 @@ struct SchedulerConfiguration {
     uint32_t worker_size = 4; // Threads
     bool work_stealing = true;
 
+    uint32_t global_queue_batch_size = 8;
     WorkerConfiguration worker;
 };
 
@@ -32,11 +33,33 @@ struct TracingConfiguration {
 };
 
 
+struct LoggingConfiguration {
+    // Copy from spdlog::level::level_enum structure
+    enum class Level {
+        Trace,
+        Debug,
+        Info,
+        Warn,
+        Error,
+        Critical,
+        Off
+    };
+
+    bool enable = true;
+
+    Level level = Level::Debug;
+    Level flush_on = Level::Warn;
+
+    bool console = true;
+
+
+};
+
 // each Runtime owns its RuntimeConfiguration
 struct RuntimeConfiguration {
     SchedulerConfiguration scheduler;
     TracingConfiguration tracing;
-
+    LoggingConfiguration logging;
 };
 
 

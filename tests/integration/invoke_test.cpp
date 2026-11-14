@@ -3,8 +3,8 @@
 
 #include "math_helper.h++"
 #include "runtime_fixture.h++"
-#include "pure/runtime/runtime.h++"
-#include "tool/dual.h++"
+#include "../../include/pure/runtime.h++"
+#include "../common/dual.h++"
 
 double _square(double x) { return x * x; }
 
@@ -37,7 +37,7 @@ TEST_F(RuntimeFixture, OutputRefLifeTime) {
     auto square = runtime.func_register(_square);
 
     auto result = [&] {
-        auto tmp = runtime.invoke<double(double)>(square, static_cast<double>(5));
+        auto tmp = runtime.invoke(square, 5.0);
         return tmp;
     }();
 
@@ -70,6 +70,7 @@ uint64_t compute(uint64_t x, uint32_t iterations) {
 
     return x;
 }
+
 TEST_F(RuntimeFixture, Granuly) {
     auto func = runtime.func_register(compute);
 
@@ -83,6 +84,18 @@ TEST_F(RuntimeFixture, Granuly) {
     for (uint32_t i = 0; i < 10; ++i) {
         outputs[i].wait_and_get();
     }
+}
+
+TEST_F(RuntimeFixture, FailurePropagates) {
+    auto boom = runtime.func_register([](double) -> double { throw std::runtime_error("boom"); });
+    auto inc  = runtime.func_register([](double x) { return x + 1; });
+
+    auto a = runtime.invoke(boom, 1.0);
+    auto b = runtime.invoke(inc, a);
+    auto c = runtime.invoke(inc, b);
+
+    EXPECT_THROW(c.wait_and_get(), std::runtime_error);
+    EXPECT_THROW(a.wait_and_get(), std::runtime_error);
 }
 
 INSTANTIATE_TEST_SUITE_P(Sizes, RuntimeParamFixture, ::testing::Values(1, 10, 1000));

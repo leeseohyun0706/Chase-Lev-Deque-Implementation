@@ -2,51 +2,48 @@
 #ifndef CONCAL_SCHEDULERPOLICY_H
 #define CONCAL_SCHEDULERPOLICY_H
 
-#include <span>
 #include "runtime/worker.h++"
 #include "pure/task.h++"
-#include "concurrency/deque.h++"
+#include "concurrency/chase_lev_deque.h++"
 #include "concurrency/mpmc_queue.h++"
+#include <pure/configuration.h++>
+#include <spdlog/spdlog.h>
 
-// class Task;
-// class Worker;
+struct SchedulerStats;
 
 class SchedulerPolicy {
 private:
 
     SchedulerConfiguration& _config;
-
-    std::vector<std::unique_ptr<class Worker>>& _workers;
+    std::vector<std::unique_ptr<Worker>>& _workers;
     std::atomic<size_t> _workEpoch{0};
-    // std::atomic<size_t> _readyCount{0};
-
-    // InjectionQueue<Task> _globalInjectionQueue;
     MPMCQueue<Task*> _globalInjectionQueue2;
+    spdlog::logger& _spdlogger;
+    SchedulerStats& _stats;
 
-    Task* try_pop(Deque<Task>& _deque);
-    Task* try_steal_from_global_queue(Deque<Task>& _deque);
+
+    Task* try_pop(ChaseLevDeque<Task>& _deque);
+    Task* try_steal_from_global_queue(ChaseLevDeque<Task>& _deque);
 
 public:
-    explicit SchedulerPolicy(std::vector<std::unique_ptr<Worker>>& _workers, SchedulerConfiguration& config);
-    /*
-     *
-     * Note that try_pop and try_steal will depend on scheduler policy separated from Scheduler itself (in order to compare and benchmark in the same scheduler).
-     *
-     */
-    std::shared_ptr<Task> try_steal();
+    explicit SchedulerPolicy(std::vector<std::unique_ptr<Worker>>& _workers, spdlog::logger& logger, SchedulerStats& stats, SchedulerConfiguration& config);
 
-    std::shared_ptr<Task> try_find_task(Deque<Task> &_deque);
+    // Note that try_pop and try_steal depends on scheduler policy, separated from Scheduler itself (in order to compare and benchmark in the same scheduler).
+    std::shared_ptr<Task> try_steal();
+    std::shared_ptr<Task> try_find_task(ChaseLevDeque<Task> &_deque);
 
     void wake_one();
     void wake_all();
     void wait(size_t old) const;
+    void submit(Task* task);
+    void enqueue_ready(Task* task);
+    spdlog::logger& spdlog_for_caller();
 
     size_t workEpoch() const {
         return _workEpoch.load();
     }
 
-    void submit(Task* task);
-    void enqueue_ready(Task* task);
-
+    spdlog::logger& spdlogger() { return _spdlogger; }
+    SchedulerStats& stats() { return _stats; }
 };
 #endif //CONCAL_SCHEDULERPOLICY_H

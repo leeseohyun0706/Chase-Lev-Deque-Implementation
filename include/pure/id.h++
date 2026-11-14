@@ -32,4 +32,5 @@ public:
         };
     }
 };
+
 #endif //CONCAL_ID_H

@@ -10,18 +10,11 @@
  */
 template<typename T>
 class SPSCQueue {
-    // static_assert(Capacity > 0, "Capacity must be greater than 0");
-    // static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of 2");
 private:
-    // static constexpr size_t _mask = Capacity - 1;
 
     alignas(64) std::atomic<size_t> _head{0};
     alignas(64) std::atomic<size_t> _tail{0};
     size_t _capacity{0};
-    // Primitive Memory Buffer
-    // alignas(64) alignas(T) T _buffer[Capacity]{};
-
-    // New Awesome Unique Pointer Buffer
     std::unique_ptr<T[]> _buffer;
 public:
 
@@ -39,11 +32,11 @@ public:
 
         if (tail - head == _capacity) return false; // Full
 
-        // new (&_buffer[tail & _mask]) T(data);
         _buffer[tail & (_capacity - 1)] = data;
         _tail.store(tail + 1, std::memory_order_release);
         return true;
     }
+
     // Pop at index of head
     bool pop(T& data) {
         const auto tail = _tail.load(std::memory_order_acquire);
@@ -77,9 +70,8 @@ public:
  * Basic Principles
  * - Fixed Capacity
  * - One Object for One Worker Thread
- * - No Dynamic Memory Allocation
  * - Retain Event Dropped Count
- * - Post Worker-End Event Readable
+ * - Post Worker-End Readable
  */
 template<typename T>
 class EventSink {

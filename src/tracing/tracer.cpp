@@ -41,14 +41,12 @@ void TraceRecorder::counter(TraceEventKind kind, uint64_t value) {
     if (!_config.enable) return;
     _sink.record(TraceEvent{
     ._ts=nowNs(), ._dur=0, ._shape=TraceEventShape::Counter, ._kind=kind,._workerId=this->_workerId,
-        ._taskId=0, ._value=value,
+        ._taskId={0}, ._value=value,
     });
 }
 
 void TraceExporter::exportTrace(const std::span<const TraceEvent> &events, std::ostream &output) {
     json js;
-
-    // js["traceEvents"] = {};
 
     for (auto& event : events) {
         switch (event._shape) {

@@ -2,12 +2,12 @@
 #ifndef CONCAL_SCHEDULER_H
 #define CONCAL_SCHEDULER_H
 
-#include "concurrency/deque.h++"
-#include "task.h++"
-#include "core/configuration.h++"
-#include "tracing/tracer.h++"
-#include "runtime/schedulerpolicy.h++"
+#include "pure/task.h++"
+#include "pure/configuration.h++"
+#include "schedulerpolicy.h++"
 
+
+class LoggingContext;
 struct alignas(64) SchedulerStats {
     std::atomic<uint64_t> _submitted{0};
     std::atomic<uint64_t> _started{0};
@@ -24,29 +24,25 @@ class Scheduler {
 private:
 
     SchedulerConfiguration& _config;
-
     size_t _schedulerId{0};
-
+    spdlog::logger& _logger;
     SchedulerStats _stats;
     size_t _worker_size;
     std::vector<std::unique_ptr<class Worker>> _workers;
     SchedulerPolicy _policy;
-
     IdGenerator<WorkerId> _workerIdGenerator;
+    LoggingContext &_loggingContext;
+
     void stop_request() ;
     void join_worker() const;
 
 public:
 
-    // explicit Scheduler(size_t worker_size = 4);
-    explicit Scheduler(SchedulerConfiguration& config, TracingConfiguration& tracing);
-    void submit(Task* task);
+    explicit Scheduler(LoggingContext& loggingContext, SchedulerConfiguration& config, TracingConfiguration& tracing);
 
     void start();
     void shutdown();
-
     auto& getPolicy() { return _policy; }
-
     void exportTrace(std::ostream& out);
 
 };

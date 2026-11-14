@@ -1,12 +1,19 @@
 #include "schedulerpolicy.h++"
 #include "runtime/worker.h++"
+#include <pure/logging/logger.h++>
+#include "scheduler.h++"
 
-SchedulerPolicy::SchedulerPolicy(std::vector<std::unique_ptr<Worker>>& workers, SchedulerConfiguration& config) : _config(config), _workers(workers), _globalInjectionQueue2(1024 * 64) {
+SchedulerPolicy::SchedulerPolicy(std::vector<std::unique_ptr<Worker>>& workers, spdlog::logger& logger, SchedulerStats& stats,  SchedulerConfiguration& config)
+    : _config(config),
+    _workers(workers),
+    _globalInjectionQueue2(1024 * 64),
+    _spdlogger(logger),
+    _stats(stats)
+{
 }
 
-Task * SchedulerPolicy::try_pop(Deque<Task> &_deque)  {
+Task * SchedulerPolicy::try_pop(ChaseLevDeque<Task> &_deque)  {
     if (auto* task = _deque.pop()) {
-        // _readyCount.fetch_sub(1);
         return task;
     }
     return nullptr;
@@ -29,7 +36,6 @@ std::shared_ptr<Task> SchedulerPolicy::try_steal() {
         Worker* victim = _workers[(start + i) % n].get();
         if (victim == self) continue;
         if (auto* task = victim->try_steal()) {
-            // _readyCount.fetch_sub(1);
             return task->unpin();
         }
     }
@@ -37,9 +43,8 @@ std::shared_ptr<Task> SchedulerPolicy::try_steal() {
     return nullptr;
 }
 
-Task* SchedulerPolicy::try_steal_from_global_queue(Deque<Task> &_deque) {
+Task* SchedulerPolicy::try_steal_from_global_queue(ChaseLevDeque<Task> &_deque) {
 
-    // const auto first = _globalInjectionQueue.tryPop();
     Task* first{nullptr};
     _globalInjectionQueue2.dequeue(first);
     // If global queue be empty.
@@ -47,10 +52,8 @@ Task* SchedulerPolicy::try_steal_from_global_queue(Deque<Task> &_deque) {
 
     size_t r = 0; // tasks local deque pushed
 
-    constexpr size_t batch_size = 8;
     // Takes batch size amounts of tasks from globalQueue and push them to local deque.
-    for (size_t i = 1; i < batch_size; i++) {
-        // Task* task = _globalInjectionQueue.tryPop();
+    for (size_t i = 1; i < _config.global_queue_batch_size; i++) {
         Task* task{nullptr};
         _globalInjectionQueue2.dequeue(task);
         if (!task) break;
@@ -66,11 +69,10 @@ Task* SchedulerPolicy::try_steal_from_global_queue(Deque<Task> &_deque) {
 
     if (r > 0)
         wake_one();
-    // _readyCount.fetch_sub(1);
     return first;
 }
 
-std::shared_ptr<Task> SchedulerPolicy::try_find_task(Deque<Task> &_deque) {
+std::shared_ptr<Task> SchedulerPolicy::try_find_task(ChaseLevDeque<Task> &_deque) {
     // First, tries to pop from local thread deque.
     if (auto* task = try_pop(_deque)) {
         return task->unpin();
@@ -98,16 +100,22 @@ void SchedulerPolicy::wait(size_t old) const {
 }
 
 void SchedulerPolicy::submit(Task *task) {
-    // _readyCount.fetch_add(1);
-    // _globalInjectionQueue.push(task);
-    _globalInjectionQueue2.enqueue(task);
+    if (!_globalInjectionQueue2.enqueue(task)) {
+        _spdlogger.error("global injection queue is full; task {} was not enqueued.", task->taskId());
+    }
     wake_one();
 }
 
 void SchedulerPolicy::enqueue_ready(Task *task) {
     if (auto*w = current_worker()) {
-        // _readyCount.fetch_add(1);
         w->submit(task);
     }
     else submit(task);
+
+    _stats._submitted.fetch_add(1, std::memory_order_relaxed);
+}
+
+spdlog::logger & SchedulerPolicy::spdlog_for_caller() {
+    if (auto* w = current_worker()) return w->spdlogger();
+    return _spdlogger;
 }
