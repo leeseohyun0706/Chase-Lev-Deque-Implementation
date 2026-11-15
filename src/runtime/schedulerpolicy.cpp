@@ -61,7 +61,10 @@ Task* SchedulerPolicy::try_steal_from_global_queue(ChaseLevDeque<Task> &_deque) 
         if (!_deque.push(task)) {
             // Going back to global queue.
             // _globalInjectionQueue.push(task);
-            _globalInjectionQueue2.enqueue(task);
+            if (_globalInjectionQueue2.enqueue(task)) {
+            _spdlogger.error("global injection queue is full; task {} was not enqueued again.", task->taskId());
+                throw std::runtime_error("global injection queue is full");
+            }
             break;
         }
         ++r;
@@ -102,6 +105,7 @@ void SchedulerPolicy::wait(size_t old) const {
 void SchedulerPolicy::submit(Task *task) {
     if (!_globalInjectionQueue2.enqueue(task)) {
         _spdlogger.error("global injection queue is full; task {} was not enqueued.", task->taskId());
+        throw std::runtime_error("global injection queue is full");
     }
     wake_one();
 }
