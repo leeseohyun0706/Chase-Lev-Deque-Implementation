@@ -19,15 +19,18 @@ void Task::complete(SchedulerPolicy &scheduler)  {
 void Task::depends_on(Task &parent, EdgeNode& node) {
 
     node.child = this;
+    // Add pending.
     _pending.fetch_add(1, std::memory_order_relaxed);
 
+    // Change the parent's head of successor to node indicating child.
     auto* head = parent._successors.load(std::memory_order_acquire);
     do {
-        if (head == closed()) { // untile head == kClosed;
+        if (head == closed()) { // If parent is already closed (means done), undo adding pending and return.
             _pending.fetch_sub(1, std::memory_order_relaxed);
             return;
         }
         node.next = head;
+        // IDK why CAS operations are required to loop, but otherwise, it doesn't work.
     } while (!parent._successors.compare_exchange_weak(head, &node, std::memory_order_release, std::memory_order_acquire));
 }
 

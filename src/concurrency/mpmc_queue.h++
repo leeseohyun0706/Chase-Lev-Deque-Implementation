@@ -5,6 +5,7 @@
 #include <cassert>
 
 
+// TODO : UNDERSTANDING HOW IT DOES WORK (I just took that codes...)
 template<typename T>
 class MPMCQueue
 {

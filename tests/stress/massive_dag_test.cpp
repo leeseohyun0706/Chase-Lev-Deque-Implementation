@@ -9,7 +9,7 @@ inline void burn1(int work) {
 }
 
 Dual term(Dual x, int k) {
-    // burn1(10000);
+    burn1(10000);
     return {
         std::sin(k * x.value) / k,
             std::cos(k * x.value) * x.derivative

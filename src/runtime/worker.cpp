@@ -16,7 +16,7 @@ std::string describe(const std::exception_ptr& error) {
     catch (...) { return "unknown exception"; }
 }
 
-
+// Run given task and handle error from that task.
 void Worker::task_run(Task *task) {
     _state.store(WorkerState::Running, std::memory_order_release);
     ExecResult result;
@@ -133,12 +133,13 @@ void Worker::start() {
 }
 
 void Worker::stop_request() {
+    // TODO : Create drain logic that is running workers until global and their local queue empty.
     _state.store(WorkerState::Stopped, std::memory_order_release);
     _is_stopped.store(true, std::memory_order_release);
     wake();
 }
 
-Task * Worker::try_steal() {
+Task* Worker::try_steal() {
     return _deque.steal();
 }
 

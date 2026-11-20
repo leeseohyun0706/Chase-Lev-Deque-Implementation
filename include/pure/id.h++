@@ -20,7 +20,7 @@ using TaskId = Id<TaskTag>;
 using WorkerId = Id<WorkerTag>;
 using RuntimeId = Id<RuntimeTag>;
 
-
+// IdGenerator creates indexes from 1 to max amount of uint64_t.
 template<typename ID>
 class IdGenerator {
 private:

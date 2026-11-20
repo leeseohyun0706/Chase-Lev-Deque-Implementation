@@ -121,7 +121,8 @@ public:
 
 class TraceExporter {
 public:
-
+    // Only for perfetto web UI
+    // TODO : Separate perfetto export and common json export.
     void exportTrace(
         const std::span<const TraceEvent>& events,
         std::ostream& output);

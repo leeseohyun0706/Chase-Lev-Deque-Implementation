@@ -62,13 +62,12 @@ void Scheduler::join_worker() const {
 Scheduler::Scheduler(LoggingContext &logContext, SchedulerConfiguration &config, TracingConfiguration& tracing)
     : _config(config),
     _logger(*logContext.make("rt.sc")),
-    _worker_size(config.worker_size),
     _policy(_workers, _logger, _stats, _config),
     _loggingContext(logContext) {
 
     auto origin = TraceRecorder::Clock::now();
 
-    for (size_t i = 0; i < _worker_size; i++) {
+    for (size_t i = 0; i < _config.worker_size; i++) {
         const auto& w_id = _workerIdGenerator.next();
         _workers.push_back(std::make_unique<Worker>(
             w_id, _policy, origin,

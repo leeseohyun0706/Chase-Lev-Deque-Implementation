@@ -21,6 +21,7 @@ Task * SchedulerPolicy::try_pop(ChaseLevDeque<Task> &_deque)  {
 
 
 std::shared_ptr<Task> SchedulerPolicy::try_steal() {
+    // TODO : Create other work-stealing logics (Currently, searching all workers)
     if (!_config.work_stealing) return nullptr;
 
     auto self = current_worker();
@@ -60,7 +61,6 @@ Task* SchedulerPolicy::try_steal_from_global_queue(ChaseLevDeque<Task> &_deque) 
 
         if (!_deque.push(task)) {
             // Going back to global queue.
-            // _globalInjectionQueue.push(task);
             if (_globalInjectionQueue2.enqueue(task)) {
             _spdlogger.error("global injection queue is full; task {} was not enqueued again.", task->taskId());
                 throw std::runtime_error("global injection queue is full");

@@ -46,6 +46,7 @@ protected:
 
     // Starts at 1 because of seal() guard.
     // Thus, the task cannot become ready while dependencies are still being attached.
+    // Also, the task only runs correctly when pending is 0 (otherwise, it would occurs output is not ready error).
     std::atomic<uint32_t> _pending{1};
     std::atomic<EdgeNode*> _successors{nullptr};
     std::atomic<TaskState> _state{TaskState::Ready};
@@ -53,20 +54,23 @@ protected:
 
     std::shared_ptr<Task> _keepAlive; // The ownership of task is owned by itself and managed by pin() and unpin().
 
-    static inline EdgeNode kClosed{};
+    static inline EdgeNode kClosed{}; // Static reference of last edge (to avoid using nullptr).
     static EdgeNode* closed() noexcept { return &kClosed; }
 
 public:
 
+    explicit Task(const TaskId taskId) : _taskId(taskId) {}
+
+    virtual ~Task() = default;
+    virtual ExecResult execute() = 0; // Execute the task function and return its value or error.
+
+
     void pin() { _keepAlive = shared_from_this(); }
     std::shared_ptr<Task> unpin() { return std::move(_keepAlive); }
 
-    virtual ~Task() = default;
-    virtual ExecResult execute() = 0;
 
     void complete(class SchedulerPolicy& scheduler);
     void depends_on(Task& parent, EdgeNode& node);
-    explicit Task(const TaskId taskId) : _taskId(taskId) {}
     TaskId taskId() const { return _taskId; }
 
     bool try_make_ready(SchedulerPolicy& scheduler);
@@ -88,10 +92,10 @@ concept InputFor = std::convertible_to<A, P> || std::same_as<std::remove_cvref_t
 
 
 template<typename F, typename ...Args>
-class PureFuncTask final : public Task{
-private:
+class PureFuncTask final : public Task {
+protected: // I would ask for c++ WHAT ACTUAL WORTH TO DISTINGUISH BETWEEN PROTECTED AND PRIVATE???
 
-    std::array<EdgeNode, sizeof...(Args)> _edges{};
+    std::array<EdgeNode, sizeof...(Args)> _edges{}; // Each edge maps each input
 
     using R = std::invoke_result_t<F, Args...>; // Deduct a return type from FunctionType
 
@@ -103,16 +107,17 @@ private:
     OutputSlot<R> _outputs;
 
 public:
-    EdgeNode& edge(size_t i)  { return _edges[i]; }
 
+
+    EdgeNode& edge(size_t i)  { return _edges[i]; }
     OutputSlot<R>& output() noexcept { return _outputs;}
 
 
-    // a count of template arguments and a count of inputs should be the same.
+    // A count of template arguments and a count of inputs should be the same.
     template<typename ...CallArgs>
         requires (sizeof...(CallArgs) == sizeof...(Args)) && (InputFor<CallArgs, Args> && ...)
     explicit PureFuncTask(
-        TaskId taskId,
+        const TaskId& taskId,
         PureFunc<F> function,
         CallArgs... inputs
         )
@@ -126,8 +131,11 @@ public:
 
         auto &inputs = _inputs.value();
         auto state = _state.load(std::memory_order_acquire);
+
+        // Task only runs when its state is Ready.
         if (state != TaskState::Ready) throw std::logic_error("Task state not ready");
 
+        // Use std::apply to grap errors from inputs
         std::apply([&](const auto&... in) {
             ((result.error = result.error ? result.error : in.error()), ...);
         }, inputs);
@@ -151,13 +159,13 @@ public:
             }catch (...) {
                 // If an exception is detected in a task, it will be failed.
                 result.status = ExecResult::Status::Failed;
-                result.error = std::current_exception();
+                result.error = std::current_exception(); // Is that safe?
                 _outputs.fail(result.error);
                 _state.store(TaskState::Fail, std::memory_order_release);
             }
         }
 
-        _inputs.reset();
+        _inputs.reset(); // If it's not, inputs are holding their output refs until program end without freed.
         return result;
     }
 

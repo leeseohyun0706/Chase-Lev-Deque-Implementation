@@ -13,6 +13,7 @@ template<typename Signature>
 class PureFunc;
 
 
+// Warning : DO NOT USE Capture Lambda (that is actually not pure function since a Lambda captures outside variables or states).
 template<typename R, typename... Args>
 class PureFunc<R(Args...)> {
 private:
@@ -32,13 +33,13 @@ private:
         explicit CallableModel(const F& func) : func(func) {} // For Lambda
     };
     FuncId _id;
+    // IDK whether it occurs copy when function is moving.
     std::shared_ptr<const Callable> _callable;
 
 public:
 
     template<typename F>
-    PureFunc(FuncId id, F func) : _id(id), _callable(std::make_unique<CallableModel<F>>(std::forward<F>(func))) {}
-
+    PureFunc(const FuncId& id, F func) : _id(id), _callable(std::make_unique<CallableModel<F>>(std::forward<F>(func))) {}
 
     PureFunc(const PureFunc& other) { if (other._callable){ _callable = other._callable->clone(); _id = other._id; } }
 
@@ -55,6 +56,7 @@ public:
 
     PureFunc& operator=(PureFunc&& other) = default;
 
+    // To make compiler know that the class is callable.
     R operator()(Args... args) const {
         if (!_callable) {
             throw std::bad_function_call();
@@ -72,11 +74,13 @@ public:
 };
 
 // Type Deduction Specialization
+// WHY THEY DON'T GENERALIZE FUNCTION TEMPLATE SIGNATURE???
 template <typename R, typename... Args>
 PureFunc(FuncId, R(*)(Args...)) -> PureFunc<R(Args...)>;
 
 template <typename F, typename Op = decltype(&F::operator())>
 struct deduce_signature;
+
 // For Lambda, but IDK how R(ClassType::*)(Args...) works.
 template <typename F, typename R, typename ClassType, typename... Args>
 struct deduce_signature<F, R(ClassType::*)(Args...) const> {

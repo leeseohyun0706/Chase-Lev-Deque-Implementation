@@ -8,6 +8,7 @@
 
 
 class LoggingContext;
+
 struct alignas(64) SchedulerStats {
     std::atomic<uint64_t> _submitted{0};
     std::atomic<uint64_t> _started{0};
@@ -16,18 +17,18 @@ struct alignas(64) SchedulerStats {
 };
 
 /*
- *
- * Basic Scheduler
- *
+ * Scheduler distributes tasks through worker threads.
  */
 class Scheduler {
 private:
 
     SchedulerConfiguration& _config;
     size_t _schedulerId{0};
+
     spdlog::logger& _logger;
     SchedulerStats _stats;
-    size_t _worker_size;
+
+    // size_t _worker_size;
     std::vector<std::unique_ptr<class Worker>> _workers;
     SchedulerPolicy _policy;
     IdGenerator<WorkerId> _workerIdGenerator;
